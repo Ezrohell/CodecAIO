@@ -1,0 +1,1796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CodecAIO</title>
+<style>
+  :root {
+    --bg: #000000;
+    --fg: #FFFFFF;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    background: var(--bg);
+    color: var(--fg);
+    margin: 0;
+    padding: 0;
+    font-family: ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace;
+  }
+  ::selection { background: var(--fg); color: var(--bg); }
+  body { padding: 16px; }
+
+  /* ---------- Title bar ---------- */
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--fg);
+  }
+  .titlebar h1 { font-size: 1.05rem; font-weight: normal; margin: 0; }
+  .gear-btn {
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    border-radius: 2px;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  .gear-btn:hover { background: var(--fg); color: var(--bg); }
+
+  /* ---------- Settings panel ---------- */
+  .settings {
+    position: absolute;
+    right: 16px;
+    top: 52px;
+    z-index: 20;
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    border-radius: 2px;
+    padding: 12px;
+    display: none;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 240px;
+  }
+  .settings[data-open="true"] { display: flex; }
+  .settings-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 0.85rem;
+  }
+  .settings-row select { flex: 1 1 auto; }
+  .settings-action {
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    border-radius: 2px;
+    padding: 6px 12px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .settings-action:hover { background: var(--fg); color: var(--bg); }
+
+  /* ---------- Credits Screen ---------- */
+  .credits-screen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    color: var(--fg);
+    z-index: 100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .credits-screen[data-open="true"] { display: flex; }
+  .credits-content {
+    border: 1px solid var(--fg);
+    padding: 32px 40px;
+    max-width: 480px;
+    width: 100%;
+    text-align: center;
+    font-family: inherit;
+  }
+  .credits-content h2 {
+    font-size: 1.1rem;
+    font-weight: normal;
+    letter-spacing: 0.3em;
+    margin: 0 0 28px 0;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--fg);
+    text-transform: uppercase;
+  }
+  .credits-block { margin: 20px 0; }
+  .credits-role {
+    font-size: 0.7rem;
+    opacity: 0.7;
+    letter-spacing: 0.25em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .credits-name {
+    font-size: 1.4rem;
+    letter-spacing: 0.1em;
+  }
+  .credits-close {
+    margin-top: 28px;
+    padding: 10px 28px;
+    background: transparent;
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    font-family: inherit;
+    font-size: 0.85rem;
+    cursor: pointer;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    border-radius: 2px;
+  }
+  .credits-close:hover { background: var(--fg); color: var(--bg); }
+
+  /* ---------- Tab bars (shared: category + level-2) ---------- */
+  .tabbar-wrap { position: relative; margin-top: 12px; }
+  .tabbar {
+    display: flex;
+    border-bottom: 1px solid var(--fg);
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+  }
+  .tabbar.level1 { flex-wrap: nowrap; }
+  .tab {
+    flex: 0 0 auto;
+    background: transparent;
+    color: var(--fg);
+    border: none;
+    font-family: inherit;
+    font-size: 0.85rem;
+    padding: 10px 14px;
+    cursor: pointer;
+    opacity: 0.6;
+    white-space: nowrap;
+  }
+  .tabbar.level2 .tab { flex: 1 1 0; }
+  .tab[aria-selected="true"] { opacity: 1; }
+  .tab-indicator {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    height: 2px;
+    background: var(--fg);
+    width: 0;
+    transform: translateX(0px);
+  }
+
+  /* ---------- Panels (category level + tool level) ---------- */
+  .panel-container { display: grid; grid-template: 1fr / 1fr; margin-top: 12px; }
+  .cat-panel { grid-area: 1 / 1; opacity: 0; pointer-events: none; }
+  .cat-panel[data-active="true"] { opacity: 1; pointer-events: auto; }
+
+  .tool-panel-container { display: grid; grid-template: 1fr / 1fr; margin-top: 12px; }
+  .tool-panel {
+    grid-area: 1 / 1;
+    border: 1px solid var(--fg);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    opacity: 0;
+    pointer-events: none;
+  }
+  /* FIX: only allow interaction when BOTH the category panel and the tool panel are active. */
+  .cat-panel[data-active="true"] .tool-panel[data-active="true"] { opacity: 1; pointer-events: auto; }
+  .tool-panel h2 { font-size: 0.9rem; font-weight: normal; margin: 0 0 4px 0; }
+
+  label { font-size: 0.85rem; }
+  textarea, select, button, input[type="password"], input[type="number"] {
+    background: var(--bg);
+    color: var(--fg);
+    border: 1px solid var(--fg);
+    border-radius: 2px;
+    font-family: inherit;
+    font-size: 0.9rem;
+    padding: 6px;
+  }
+  textarea { resize: vertical; min-height: 80px; caret-color: var(--fg); }
+  button { cursor: pointer; padding: 8px; margin-top: 2px; }
+  button:hover { background: var(--fg); color: var(--bg); }
+  button:disabled { opacity: 0.5; cursor: default; }
+  input[type="checkbox"] { accent-color: var(--fg); }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+  .warning-note { font-size: 0.78rem; opacity: 0.85; margin: 0; }
+  .fallback-notice { border: 1px solid var(--fg); padding: 12px; font-size: 0.9rem; }
+  .io-buttons-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 2px; }
+  .io-buttons-row button { margin-top: 0; }
+  .transient-msg { font-size: 0.78rem; opacity: 0.9; }
+
+  *:focus { outline: 2px solid var(--fg); outline-offset: 1px; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--fg); border-radius: 2px; }
+  textarea, select, .tabbar { scrollbar-color: var(--fg) var(--bg); }
+
+  footer {
+    margin-top: 16px;
+    padding-top: 8px;
+    border-top: 1px solid var(--fg);
+    font-size: 0.78rem;
+    line-height: 1.5;
+    min-height: 1px;
+  }
+  footer p { margin: 4px 0; }
+
+  @media (max-width: 720px) {
+    .tab { font-size: 0.8rem; padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="titlebar">
+  <h1>CodecAIO</h1>
+  <button id="gear-btn" class="gear-btn" type="button" aria-label="Settings" aria-haspopup="true" aria-expanded="false">&#9881;</button>
+</div>
+
+<div class="tabbar-wrap">
+  <div id="settings" class="settings" data-open="false" role="dialog" aria-label="Settings">
+    <div class="settings-row">
+      <label for="opt-animation">Animation</label>
+      <input type="checkbox" id="opt-animation" aria-label="Animation">
+    </div>
+    <div class="settings-row">
+      <label for="opt-sfx">SFX</label>
+      <input type="checkbox" id="opt-sfx" aria-label="SFX">
+    </div>
+    <div class="settings-row">
+      <label for="opt-palette">Palette</label>
+      <select id="opt-palette" aria-label="Palette"></select>
+    </div>
+    <div class="settings-row">
+      <label for="opt-credits">Credits Screen</label>
+      <button id="opt-credits" class="settings-action" type="button" aria-label="Open Credits Screen">Open</button>
+    </div>
+  </div>
+
+  <div id="cat-tabbar" class="tabbar level1" role="tablist" aria-label="Category"></div>
+</div>
+
+<div id="cat-panel-container" class="panel-container"></div>
+
+<footer id="footer"></footer>
+
+<div id="credits-screen" class="credits-screen" data-open="false" role="dialog" aria-modal="true" aria-label="Credits Screen">
+  <div class="credits-content">
+    <h2>Credits</h2>
+    <div class="credits-block">
+      <div class="credits-role">Lead Developer</div>
+      <div class="credits-name">Ezrohell</div>
+    </div>
+    <div class="credits-block">
+      <div class="credits-role">Idea Giver</div>
+      <div class="credits-name">Aoi</div>
+    </div>
+    <button id="credits-close" class="credits-close" type="button">Close</button>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ==================================================================
+  // §BASE core
+  // ==================================================================
+
+  var BASES = [
+    {n:2,name:'Binary'},{n:3,name:'Ternary'},{n:4,name:'Quaternary'},{n:5,name:'Quinary'},
+    {n:6,name:'Senary'},{n:7,name:'Septenary'},{n:8,name:'Octal'},{n:9,name:'Nonary'},
+    {n:10,name:'Decimal'},{n:11,name:'Undecimal'},{n:12,name:'Duodecimal'},{n:13,name:'Tridecimal'},
+    {n:14,name:'Tetradecimal'},{n:15,name:'Pentadecimal'},{n:16,name:'Hexadecimal'},{n:20,name:'Vigesimal'},
+    {n:24,name:'Tetravigesimal'},{n:26,name:'Hexavigesimal'},{n:27,name:'Septenvigesimal'},{n:30,name:'Trigesimal'},
+    {n:32,name:'Duotrigesimal'},{n:36,name:'Hexatrigesimal'},{n:60,name:'Sexagesimal'},{n:64,name:'Tetrasexagesimal'},
+    {n:85,name:'Pentaoctogesimal'},{n:120,name:'Base 120'},{n:210,name:'Base 210 (Primorial)'}
+  ];
+
+  function baseAlphabetFor(base) {
+    if (base === 64) return "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (base === 85) { var s=''; for (var c=0x21;c<=0x75;c++) s+=String.fromCharCode(c); return s; }
+    if (base === 60) return "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"+"abcdefghijklmnopqrstuvwx";
+    return "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".slice(0, base);
+  }
+  function baseIsCaseInsensitive(base){ return base>=11 && base<=36; }
+  function baseGroupWidth(base){ return (base===120||base===210)?3:null; }
+  function baseZeroRepr(base){ return (base===120||base===210)?'000':'0'; }
+  function bytesToBigInt(bytes){ var N=0n; for(var i=0;i<bytes.length;i++) N=N*256n+BigInt(bytes[i]); return N; }
+  function bigIntToBytesMinimal(N){ var bytes=[]; var n=N; while(n>0n){bytes.unshift(Number(n&0xFFn)); n>>=8n;} return new Uint8Array(bytes); }
+
+  function bigIntToBaseString(N, base){
+    if(N===0n) return baseZeroRepr(base);
+    if(base===120||base===210){
+      var width=baseGroupWidth(base), B=BigInt(base);
+      var groups=[], n=N;
+      while(n>0n){ groups.unshift(Number(n%B)); n=n/B; }
+      return groups.map(function(g){ return String(g).padStart(width,'0'); }).join('');
+    }
+    var alphabet=baseAlphabetFor(base), Bb=BigInt(base);
+    var digits=[], nn=N;
+    while(nn>0n){ digits.unshift(Number(nn%Bb)); nn=nn/Bb; }
+    return digits.map(function(d){ return alphabet[d]; }).join('');
+  }
+  function baseEncodeText(text, base){
+    if(text==='') return '';
+    var bytes=new TextEncoder().encode(text);
+    return bigIntToBaseString(bytesToBigInt(bytes), base);
+  }
+  function baseDecodeDigits(str, base){
+    if(str==='') return {ok:true, text:''};
+    if(/\s/.test(str)) return {ok:false, error:'ERROR: whitespace is not permitted'};
+    var N;
+    if(base===120||base===210){
+      var width=baseGroupWidth(base);
+      if(str.length%width!==0) return {ok:false, error:'ERROR: base '+base+' input length must be a multiple of '+width};
+      N=0n; var Bg=BigInt(base);
+      for(var i=0;i<str.length;i+=width){
+        var g=str.slice(i,i+width);
+        if(!/^[0-9]+$/.test(g)){
+          var badChar='?';
+          for(var k=0;k<g.length;k++){ if(!/[0-9]/.test(g[k])){ badChar=g[k]; break; } }
+          return {ok:false, error:"ERROR: invalid digit '"+badChar+"' for base "+base};
+        }
+        var val=parseInt(g,10);
+        if(val>=base) return {ok:false, error:"ERROR: digit group '"+g+"' out of range for base "+base};
+        N=N*Bg+BigInt(val);
+      }
+    } else {
+      var alphabet=baseAlphabetFor(base), caseInsensitive=baseIsCaseInsensitive(base), Bn=BigInt(base);
+      N=0n;
+      for(var idx2=0; idx2<str.length; idx2++){
+        var origChar=str[idx2];
+        var lookupChar = caseInsensitive ? origChar.toUpperCase() : origChar;
+        var pos = alphabet.indexOf(lookupChar);
+        if(pos===-1) return {ok:false, error:"ERROR: invalid digit '"+origChar+"' for base "+base};
+        N=N*Bn+BigInt(pos);
+      }
+    }
+    if(N===0n) return {ok:false, error:'ERROR: decoded bytes are not valid UTF-8'};
+    var bytes=bigIntToBytesMinimal(N);
+    try{ return {ok:true, text:new TextDecoder('utf-8',{fatal:true}).decode(bytes)}; }
+    catch(e){ return {ok:false, error:'ERROR: decoded bytes are not valid UTF-8'}; }
+  }
+
+  // ==================================================================
+  // §HASH core
+  // ==================================================================
+
+  function bytesToHex(bytes){
+    var s='';
+    for(var i=0;i<bytes.length;i++) s += bytes[i].toString(16).padStart(2,'0');
+    return s;
+  }
+  function hashHex(text, alg){
+    var bytes = new TextEncoder().encode(text);
+    return crypto.subtle.digest(alg, bytes).then(function(digest){
+      return bytesToHex(new Uint8Array(digest));
+    });
+  }
+  var HASH_HEXLEN = {
+    'SHA-1':40, 'SHA-224':56, 'SHA-256':64, 'SHA-384':96, 'SHA-512':128,
+    'SHA-512/224':56, 'SHA-512/256':64,
+    'SHA3-224':56, 'SHA3-256':64, 'SHA3-384':96, 'SHA3-512':128,
+    'SHAKE-128':64, 'SHAKE-256':64
+  };
+  var HASH_DISPLAY_LABEL = { 'SHA-1': 'SHA-160' };
+  function hashDisplayLabel(alg){ return HASH_DISPLAY_LABEL[alg] || alg; }
+
+  var HASH_ALWAYS_ALGS = ['SHA-1', 'SHA-256', 'SHA-384', 'SHA-512'];
+  var HASH_EXTRA_ALGS = ['SHA-224', 'SHA-512/224', 'SHA-512/256', 'SHA3-224', 'SHA3-256', 'SHA3-384', 'SHA3-512', 'SHAKE-128', 'SHAKE-256'];
+
+  function detectExtraHashSupport(){
+    var probes = HASH_EXTRA_ALGS.map(function(alg){
+      return crypto.subtle.digest(alg, new Uint8Array(0)).then(function(){ return alg; }).catch(function(){ return null; });
+    });
+    return Promise.all(probes).then(function(results){
+      return results.filter(function(alg){ return alg !== null; });
+    });
+  }
+
+  function constantTimeEqual(a,b){
+    if(a.length!==b.length) return false;
+    var diff=0;
+    for(var i=0;i<a.length;i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+    return diff===0;
+  }
+  function hashVerify(text, expectedRaw, alg){
+    var expected = expectedRaw.replace(/\s/g,'').toLowerCase();
+    if(expected==='') return Promise.resolve('ERROR: expected hash is empty');
+    var expectedLen = HASH_HEXLEN[alg];
+    if(!/^[0-9a-f]+$/.test(expected) || expected.length!==expectedLen){
+      return Promise.resolve('ERROR: expected hash is not a valid '+hashDisplayLabel(alg)+' hex digest');
+    }
+    return hashHex(text, alg).then(function(actual){
+      return constantTimeEqual(actual, expected) ? 'MATCH' : 'MISMATCH';
+    });
+  }
+
+  // ==================================================================
+  // §B64 core
+  // ==================================================================
+
+  var B64_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var B64URL_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+  var B32_ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+
+  function bytesToB64Generic(bytes, alphabet, pad){
+    var out='';
+    for(var i=0;i<bytes.length;i+=3){
+      var b0=bytes[i], b1=bytes[i+1], b2=bytes[i+2];
+      var has1 = i+1<bytes.length, has2 = i+2<bytes.length;
+      var n = (b0<<16) | ((has1?b1:0)<<8) | (has2?b2:0);
+      out += alphabet[(n>>18)&0x3F];
+      out += alphabet[(n>>12)&0x3F];
+      out += has1 ? alphabet[(n>>6)&0x3F] : (pad?'=':'');
+      out += has2 ? alphabet[n&0x3F] : (pad?'=':'');
+    }
+    return out;
+  }
+  function b64GenericToBytes(str, alphabet, variantName){
+    var clean = str.replace(/=+$/,'');
+    var idxMap = {};
+    for(var i=0;i<alphabet.length;i++) idxMap[alphabet[i]] = i;
+    for(var i2=0;i2<clean.length;i2++){
+      if(!(clean[i2] in idxMap)) return {ok:false, error:'ERROR: invalid '+variantName+' character at position '+i2};
+    }
+    if(clean.length % 4 === 1) return {ok:false, error:'ERROR: invalid '+variantName+' length'};
+    var bytes=[];
+    for(var j=0;j<clean.length;j+=4){
+      var chunk = clean.slice(j,j+4);
+      var n0=idxMap[chunk[0]], n1=idxMap[chunk[1]];
+      var n2 = chunk.length>2 ? idxMap[chunk[2]] : undefined;
+      var n3 = chunk.length>3 ? idxMap[chunk[3]] : undefined;
+      var combined = (n0<<18) | (n1<<12) | ((n2||0)<<6) | (n3||0);
+      bytes.push((combined>>16)&0xFF);
+      if(chunk.length>2) bytes.push((combined>>8)&0xFF);
+      if(chunk.length>3) bytes.push(combined&0xFF);
+    }
+    return {ok:true, bytes:new Uint8Array(bytes)};
+  }
+
+  function b32Encode(bytes, pad){
+    var out='', bits=0, value=0;
+    for(var i=0;i<bytes.length;i++){
+      value = (value<<8) | bytes[i];
+      bits += 8;
+      while(bits>=5){
+        out += B32_ALPHABET[(value>>>(bits-5)) & 31];
+        bits -= 5;
+      }
+    }
+    if(bits>0){
+      out += B32_ALPHABET[(value << (5-bits)) & 31];
+    }
+    if(pad){
+      while(out.length % 8 !== 0) out += '=';
+    }
+    return out;
+  }
+  function b32Decode(str){
+    var clean = str.replace(/=+$/,'');
+    var idxMap = {};
+    for(var i=0;i<B32_ALPHABET.length;i++) idxMap[B32_ALPHABET[i]] = i;
+    var upper = clean.toUpperCase();
+    for(var i2=0;i2<upper.length;i2++){
+      if(!(upper[i2] in idxMap)) return {ok:false, error:'ERROR: invalid Base32 character at position '+i2};
+    }
+    var validRemainders = [0,2,4,5,7];
+    if(validRemainders.indexOf(upper.length % 8) === -1) return {ok:false, error:'ERROR: invalid Base32 length'};
+    var bits=0, value=0;
+    var bytes=[];
+    for(var j=0;j<upper.length;j++){
+      value = (value<<5) | idxMap[upper[j]];
+      bits += 5;
+      if(bits>=8){
+        bytes.push((value >>> (bits-8)) & 0xFF);
+        bits -= 8;
+      }
+    }
+    return {ok:true, bytes:new Uint8Array(bytes)};
+  }
+
+  function b64Encode(text, variant, pad){
+    var bytes = new TextEncoder().encode(text);
+    if(variant==='Base32') return b32Encode(bytes, pad);
+    var alphabet = variant==='Base64URL' ? B64URL_ALPHABET : B64_ALPHABET;
+    return bytesToB64Generic(bytes, alphabet, pad);
+  }
+  function b64Decode(str, variant){
+    var result;
+    if(variant==='Base32'){
+      result = b32Decode(str);
+    } else {
+      var alphabet = variant==='Base64URL' ? B64URL_ALPHABET : B64_ALPHABET;
+      result = b64GenericToBytes(str, alphabet, variant);
+    }
+    if(!result.ok) return result;
+    try{
+      return {ok:true, text: new TextDecoder('utf-8',{fatal:true}).decode(result.bytes)};
+    }catch(e){
+      return {ok:false, error:'ERROR: decoded bytes are not valid UTF-8'};
+    }
+  }
+
+  function bytesToStdBase64(bytes){ return bytesToB64Generic(bytes, B64_ALPHABET, true); }
+  function stdBase64ToBytes(str){ return b64GenericToBytes(str, B64_ALPHABET, 'base64'); }
+  function base64UrlEncodeBytes(bytes){ return bytesToB64Generic(bytes, B64URL_ALPHABET, false); }
+  function base64UrlDecodeBytes(str){ return b64GenericToBytes(str, B64URL_ALPHABET, 'base64url'); }
+
+  // ==================================================================
+  // §CRYPT core
+  // ==================================================================
+
+  function cryptEncrypt(plaintext, password, iterations){
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var iv = crypto.getRandomValues(new Uint8Array(12));
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+      .then(function(baseKey){
+        return crypto.subtle.deriveKey(
+          { name:'PBKDF2', salt: salt, iterations: iterations, hash:'SHA-256' },
+          baseKey,
+          { name:'AES-GCM', length:256 },
+          false,
+          ['encrypt']
+        );
+      })
+      .then(function(key){
+        return crypto.subtle.encrypt({name:'AES-GCM', iv: iv}, key, new TextEncoder().encode(plaintext));
+      })
+      .then(function(ctBuf){
+        var ct = new Uint8Array(ctBuf);
+        var combined = new Uint8Array(salt.length + iv.length + ct.length);
+        combined.set(salt,0); combined.set(iv,salt.length); combined.set(ct, salt.length+iv.length);
+        return bytesToStdBase64(combined);
+      });
+  }
+  function cryptDecrypt(ciphertextB64, password, iterations){
+    var decoded = stdBase64ToBytes(ciphertextB64);
+    if(!decoded.ok) return Promise.resolve({ok:false, error:'ERROR: ciphertext is not valid base64'});
+    var bytes = decoded.bytes;
+    if(bytes.length < 28) return Promise.resolve({ok:false, error:'ERROR: ciphertext is too short'});
+    var salt = bytes.slice(0,16), iv = bytes.slice(16,28), ct = bytes.slice(28);
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey'])
+      .then(function(baseKey){
+        return crypto.subtle.deriveKey(
+          { name:'PBKDF2', salt: salt, iterations: iterations, hash:'SHA-256' },
+          baseKey,
+          { name:'AES-GCM', length:256 },
+          false,
+          ['decrypt']
+        );
+      })
+      .then(function(key){
+        return crypto.subtle.decrypt({name:'AES-GCM', iv: iv}, key, ct)
+          .then(function(ptBuf){
+            try{
+              var text = new TextDecoder('utf-8',{fatal:true}).decode(ptBuf);
+              return {ok:true, text: text};
+            }catch(e){
+              return {ok:false, error:'ERROR: decrypted bytes are not valid UTF-8'};
+            }
+          })
+          .catch(function(){
+            return {ok:false, error:'ERROR: decryption failed (wrong password or corrupted data)'};
+          });
+      });
+  }
+
+  // ==================================================================
+  // §COMPRESS core
+  // ==================================================================
+
+  function compressionSupported(){
+    return typeof CompressionStream !== 'undefined' && typeof DecompressionStream !== 'undefined';
+  }
+  function streamToBytes(stream){
+    var reader = stream.getReader();
+    var chunks=[];
+    var total=0;
+    function pump(){
+      return reader.read().then(function(res){
+        if(res.done){
+          var out = new Uint8Array(total);
+          var off=0;
+          for(var i=0;i<chunks.length;i++){ out.set(chunks[i], off); off += chunks[i].length; }
+          return out;
+        }
+        chunks.push(res.value);
+        total += res.value.length;
+        return pump();
+      });
+    }
+    return pump();
+  }
+  function compressText(text, format){
+    var bytes = new TextEncoder().encode(text);
+    var cs = new CompressionStream(format);
+    var writer = cs.writable.getWriter();
+    var writePromise = writer.write(bytes).then(function(){ return writer.close(); });
+    return Promise.all([streamToBytes(cs.readable), writePromise]).then(function(results){
+      return bytesToStdBase64(results[0]);
+    });
+  }
+  function decompressText(b64, format){
+    var decoded = stdBase64ToBytes(b64);
+    if(!decoded.ok) return Promise.resolve({ok:false, error:'ERROR: input is not valid base64'});
+    var ds;
+    try{
+      ds = new DecompressionStream(format);
+    }catch(e){
+      return Promise.resolve({ok:false, error:'ERROR: decompression failed'});
+    }
+    var writer = ds.writable.getWriter();
+    var writePromise = writer.write(decoded.bytes).then(function(){ return writer.close(); }).catch(function(){});
+    return Promise.all([streamToBytes(ds.readable), writePromise])
+      .then(function(results){
+        var outBytes = results[0];
+        try{
+          var text = new TextDecoder('utf-8',{fatal:true}).decode(outBytes);
+          return {ok:true, text: text};
+        }catch(e){
+          return {ok:false, error:'ERROR: decompressed bytes are not valid UTF-8'};
+        }
+      })
+      .catch(function(){
+        return {ok:false, error:'ERROR: decompression failed'};
+      });
+  }
+
+  // ==================================================================
+  // §UUID core
+  // ==================================================================
+
+  function uuidV4(){ return crypto.randomUUID(); }
+  function uuidV7(){
+    var ms = Date.now();
+    var bytes = new Uint8Array(16);
+    bytes[0] = Math.floor(ms / Math.pow(2,40)) & 0xFF;
+    bytes[1] = Math.floor(ms / Math.pow(2,32)) & 0xFF;
+    bytes[2] = Math.floor(ms / Math.pow(2,24)) & 0xFF;
+    bytes[3] = Math.floor(ms / Math.pow(2,16)) & 0xFF;
+    bytes[4] = Math.floor(ms / Math.pow(2,8)) & 0xFF;
+    bytes[5] = ms & 0xFF;
+    var rand = crypto.getRandomValues(new Uint8Array(10));
+    bytes[6] = 0x70 | (rand[0] & 0x0F);
+    bytes[7] = rand[1];
+    bytes[8] = 0x80 | (rand[2] & 0x3F);
+    bytes[9] = rand[3]; bytes[10]=rand[4]; bytes[11]=rand[5];
+    bytes[12]=rand[6]; bytes[13]=rand[7]; bytes[14]=rand[8]; bytes[15]=rand[9];
+    return bytesToHyphenatedUuid(bytes);
+  }
+  function bytesToHyphenatedUuid(bytes){
+    var hex = bytesToHex(bytes);
+    return hex.slice(0,8)+'-'+hex.slice(8,12)+'-'+hex.slice(12,16)+'-'+hex.slice(16,20)+'-'+hex.slice(20,32);
+  }
+  function generateUuids(version, count){
+    var out=[];
+    for(var i=0;i<count;i++) out.push(version==='v7' ? uuidV7() : uuidV4());
+    return out.join('\n');
+  }
+  var UUID_RE = /^([0-9a-fA-F]{8})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{4})-([0-9a-fA-F]{12})$/;
+  function parseUuid(input){
+    var lines = input.split('\n');
+    var nonEmpty = lines.filter(function(l){ return l.trim()!==''; });
+    if(nonEmpty.length > 1) return {ok:false, error:'ERROR: parse accepts a single UUID'};
+    var trimmed = (nonEmpty[0]||'').trim();
+    var m = UUID_RE.exec(trimmed);
+    if(!m) return {ok:false, error:'ERROR: not a valid UUID'};
+    var hex = (m[1]+m[2]+m[3]+m[4]+m[5]).toLowerCase();
+    var versionNibble = hex[12];
+    var variantNibble = parseInt(hex[16],16);
+    var variantOut;
+    if((variantNibble & 0x8) === 0) variantOut = 'other';
+    else if((variantNibble & 0xC) === 0x8) variantOut = 'RFC 4122';
+    else variantOut = 'other';
+
+    var timestamp = '-';
+    if(versionNibble==='7'){
+      var msHex = hex.slice(0,12);
+      var ms = parseInt(msHex,16);
+      timestamp = new Date(ms).toISOString();
+    } else if(versionNibble==='1'){
+      var timeLow = hex.slice(0,8);
+      var timeMid = hex.slice(8,12);
+      var timeHiVer = hex.slice(12,16);
+      var timeHi = (parseInt(timeHiVer,16) & 0x0FFF).toString(16);
+      while(timeHi.length<3) timeHi = '0'+timeHi;
+      var ts100ns = BigInt('0x'+timeHi+timeMid+timeLow);
+      var GREGORIAN_OFFSET = 122192928000000000n;
+      var unix100ns = ts100ns - GREGORIAN_OFFSET;
+      var unixMs = Number(unix100ns / 10000n);
+      timestamp = new Date(unixMs).toISOString();
+    }
+    return { ok:true, version: versionNibble, variant: variantOut, bytesHex: hex, timestamp: timestamp };
+  }
+
+  // ==================================================================
+  // §JWT core
+  // ==================================================================
+
+  function safeJsonParseObject(str){
+    var obj;
+    try{ obj = JSON.parse(str); }
+    catch(e){ return {ok:false}; }
+    if(obj===null || typeof obj !== 'object' || Array.isArray(obj)) return {ok:false};
+    return {ok:true, obj: obj};
+  }
+  function hmacSha256(secret, message){
+    return crypto.subtle.importKey('raw', new TextEncoder().encode(secret), {name:'HMAC', hash:'SHA-256'}, false, ['sign'])
+      .then(function(key){
+        return crypto.subtle.sign('HMAC', key, new TextEncoder().encode(message));
+      })
+      .then(function(sig){ return new Uint8Array(sig); });
+  }
+  function jwtEncode(headerStr, payloadStr, secret){
+    var h = safeJsonParseObject(headerStr);
+    if(!h.ok) return Promise.resolve({ok:false, error:'ERROR: header is not valid JSON'});
+    var p = safeJsonParseObject(payloadStr);
+    if(!p.ok) return Promise.resolve({ok:false, error:'ERROR: payload is not valid JSON'});
+    var headerB64 = base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify(h.obj)));
+    var payloadB64 = base64UrlEncodeBytes(new TextEncoder().encode(JSON.stringify(p.obj)));
+    var signingInput = headerB64+'.'+payloadB64;
+    return hmacSha256(secret, signingInput).then(function(sig){
+      var sigB64 = base64UrlEncodeBytes(sig);
+      return {ok:true, token: signingInput+'.'+sigB64};
+    });
+  }
+  function bytesEqual(a,b){
+    if(a.length!==b.length) return false;
+    var diff=0;
+    for(var i=0;i<a.length;i++) diff |= a[i]^b[i];
+    return diff===0;
+  }
+  function jwtDecode(token, secret){
+    var parts = token.split('.');
+    if(parts.length !== 3) return Promise.resolve({ok:false, error:'ERROR: JWT must have 3 parts'});
+    var decodedParts = [];
+    for(var i=0;i<3;i++){
+      var r = base64UrlDecodeBytes(parts[i]);
+      if(!r.ok) return Promise.resolve({ok:false, error:'ERROR: JWT part '+(i+1)+' is not valid base64url'});
+      decodedParts.push(r.bytes);
+    }
+    var headerObj, payloadObj;
+    try{ headerObj = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(decodedParts[0])); }
+    catch(e){ return Promise.resolve({ok:false, error:'ERROR: header is not valid JSON'}); }
+    try{ payloadObj = JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(decodedParts[1])); }
+    catch(e){ return Promise.resolve({ok:false, error:'ERROR: payload is not valid JSON'}); }
+
+    function finish(sigStatus){
+      return {
+        ok:true,
+        header: JSON.stringify(headerObj, null, 2),
+        payload: JSON.stringify(payloadObj, null, 2),
+        signature: sigStatus
+      };
+    }
+
+    if(secret !== ''){
+      var signingInput = parts[0]+'.'+parts[1];
+      return hmacSha256(secret, signingInput).then(function(expectedSig){
+        return finish(bytesEqual(expectedSig, decodedParts[2]) ? 'MATCH' : 'MISMATCH');
+      });
+    }
+    return Promise.resolve(finish('NOT VERIFIED'));
+  }
+
+  // ==================================================================
+  // §TEXT core
+  // ==================================================================
+
+  function textUrlEncode(s){ return encodeURIComponent(s); }
+  function textUrlDecode(s){
+    try{ return {ok:true, text: decodeURIComponent(s)}; }
+    catch(e){ return {ok:false, error:'ERROR: invalid URL percent-encoding'}; }
+  }
+  var HTML_ENTITY_ENC = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
+  function textHtmlEncode(s){
+    return s.replace(/[&<>"']/g, function(c){ return HTML_ENTITY_ENC[c]; });
+  }
+  var HTML_ENTITY_DEC = {'&amp;':'&','&lt;':'<','&gt;':'>','&quot;':'"','&#39;':"'"};
+  function textHtmlDecode(s){
+    var result = '';
+    var i = 0;
+    while(i < s.length){
+      if(s[i] === '&'){
+        var semi = s.indexOf(';', i);
+        if(semi !== -1){
+          var entity = s.slice(i, semi+1);
+          if(HTML_ENTITY_DEC[entity] !== undefined){
+            result += HTML_ENTITY_DEC[entity];
+            i = semi+1;
+            continue;
+          }
+          var numMatch = /^&#(\d+);$/.exec(entity);
+          var hexMatch = /^&#x([0-9a-fA-F]+);$/.exec(entity);
+          if(numMatch){
+            result += String.fromCodePoint(parseInt(numMatch[1],10));
+            i = semi+1;
+            continue;
+          }
+          if(hexMatch){
+            result += String.fromCodePoint(parseInt(hexMatch[1],16));
+            i = semi+1;
+            continue;
+          }
+          return {ok:false, error:"ERROR: unknown HTML entity '"+entity+"'"};
+        }
+      }
+      result += s[i];
+      i++;
+    }
+    return {ok:true, text: result};
+  }
+
+  // ==================================================================
+  // §TIME core
+  // ==================================================================
+
+  function timeFromEpoch(epochStr, unit){
+    var trimmed = epochStr.trim();
+    if(!/^-?\d+$/.test(trimmed)) return {ok:false, error:'ERROR: epoch must be an integer'};
+    var n = BigInt(trimmed);
+    var ms = unit === 'seconds' ? n * 1000n : n;
+    if(ms > 8640000000000000n || ms < -8640000000000000n) return {ok:false, error:'ERROR: epoch out of range'};
+    var date = new Date(Number(ms));
+    if(isNaN(date.getTime())) return {ok:false, error:'ERROR: epoch out of range'};
+    return {ok:true, text: date.toISOString()};
+  }
+  function timeFromIso(str, unit){
+    var date = new Date(str.trim());
+    if(isNaN(date.getTime())) return {ok:false, error:'ERROR: not a valid ISO 8601 date'};
+    var ms = date.getTime();
+    var out = unit==='seconds' ? Math.floor(ms/1000) : ms;
+    return {ok:true, text: String(out)};
+  }
+
+  // ==================================================================
+  // §JSON core
+  // ==================================================================
+
+  function jsonPretty(str){
+    try{ return {ok:true, text: JSON.stringify(JSON.parse(str), null, 2)}; }
+    catch(e){ return {ok:false, error:'ERROR: '+e.message}; }
+  }
+  function jsonMinify(str){
+    try{ return {ok:true, text: JSON.stringify(JSON.parse(str))}; }
+    catch(e){ return {ok:false, error:'ERROR: '+e.message}; }
+  }
+  function jsonValidate(str){
+    try{ JSON.parse(str); return 'VALID'; }
+    catch(e){ return 'INVALID: '+e.message; }
+  }
+
+  // ==================================================================
+  // Palettes
+  // ==================================================================
+
+  var PALETTES = [
+    { id: 'monochrome',      name: 'Monochrome',     bg: '#000000', fg: '#FFFFFF' },
+    { id: 'paper',           name: 'Paper',           bg: '#FFFFFF', fg: '#111111' },
+    { id: 'amber-terminal',  name: 'Amber Terminal',  bg: '#1A0F00', fg: '#FFB000' },
+    { id: 'phosphor-green',  name: 'Phosphor Green',  bg: '#001100', fg: '#33FF33' },
+    { id: 'cyan-ice',        name: 'Cyan Ice',        bg: '#001018', fg: '#00E5FF' },
+    { id: 'magenta-neon',    name: 'Magenta Neon',    bg: '#1A001A', fg: '#FF33FF' },
+    { id: 'blood-red',       name: 'Blood Red',       bg: '#1A0000', fg: '#FF4444' },
+    { id: 'solarized-dark',  name: 'Solarized Dark',  bg: '#002B36', fg: '#93A1A1' }
+  ];
+  var PALETTE_IDS = PALETTES.map(function (p) { return p.id; });
+  function applyPalette(id) {
+    var p = PALETTES.filter(function (x) { return x.id === id; })[0] || PALETTES[0];
+    document.documentElement.style.setProperty('--bg', p.bg);
+    document.documentElement.style.setProperty('--fg', p.fg);
+  }
+
+  // ==================================================================
+  // Settings persistence
+  // ==================================================================
+
+  var SETTINGS_KEY = 'aio-toolbox:settings';
+  var DEFAULT_SETTINGS = { animation: true, sfx: true, palette: 'monochrome' };
+
+  function loadSettings() {
+    var raw;
+    try { raw = localStorage.getItem(SETTINGS_KEY); }
+    catch (e) { return Object.assign({}, DEFAULT_SETTINGS); }
+    if (raw === null) { saveSettings(DEFAULT_SETTINGS); return Object.assign({}, DEFAULT_SETTINGS); }
+    var parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { saveSettings(DEFAULT_SETTINGS); return Object.assign({}, DEFAULT_SETTINGS); }
+    var valid =
+      parsed && typeof parsed === 'object' &&
+      typeof parsed.animation === 'boolean' &&
+      typeof parsed.sfx === 'boolean' &&
+      typeof parsed.palette === 'string' &&
+      PALETTE_IDS.indexOf(parsed.palette) !== -1 &&
+      Object.keys(parsed).length === 3;
+    if (!valid) { saveSettings(DEFAULT_SETTINGS); return Object.assign({}, DEFAULT_SETTINGS); }
+    return { animation: parsed.animation, sfx: parsed.sfx, palette: parsed.palette };
+  }
+  function saveSettings(s) {
+    try {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify({ animation: s.animation, sfx: s.sfx, palette: s.palette }));
+    } catch (e) { /* storage unavailable; ignore */ }
+  }
+
+  var settings = loadSettings();
+
+  // ==================================================================
+  // SFX (Web Audio)
+  // ==================================================================
+
+  var audioCtx = null;
+  function ensureAudioContext() {
+    if (!audioCtx) {
+      var Ctor = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctor();
+    }
+    if (audioCtx.state === 'suspended') { audioCtx.resume(); }
+    return audioCtx;
+  }
+  function playTone(frequency) {
+    if (!settings.sfx) return;
+    var ctx = ensureAudioContext();
+    var osc = ctx.createOscillator();
+    var gain = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = frequency;
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    var now = ctx.currentTime;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.15, now + 0.005);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.005 + 0.045);
+    osc.start(now);
+    osc.stop(now + 0.05);
+    osc.onended = function () { osc.disconnect(); gain.disconnect(); };
+  }
+
+  // ==================================================================
+  // DOM helper builders
+  // ==================================================================
+
+  function el(tag, attrs, children) {
+    var e = document.createElement(tag);
+    if (attrs) {
+      Object.keys(attrs).forEach(function (k) {
+        if (k === 'text') e.textContent = attrs[k];
+        else e.setAttribute(k, attrs[k]);
+      });
+    }
+    (children || []).forEach(function (c) { e.appendChild(c); });
+    return e;
+  }
+  var uidCounter = 0;
+  function uid(prefix) { uidCounter++; return prefix + '-' + uidCounter; }
+
+  function fieldLabel(forId, text) { return el('label', { 'for': forId, text: text }); }
+
+  function fieldTextarea(id, ariaLabel, readonly) {
+    var attrs = { id: id, 'aria-label': ariaLabel };
+    if (readonly) attrs.readonly = 'readonly';
+    return el('textarea', attrs);
+  }
+  function fieldSelect(id, ariaLabel, options, defaultValue) {
+    var s = el('select', { id: id, 'aria-label': ariaLabel });
+    options.forEach(function (opt) {
+      var o = el('option', { value: opt.value, text: opt.text });
+      if (opt.value === defaultValue) o.selected = true;
+      s.appendChild(o);
+    });
+    return s;
+  }
+  function fieldPassword(id, ariaLabel) {
+    return el('input', { type: 'password', id: id, 'aria-label': ariaLabel, autocomplete: 'off' });
+  }
+  function fieldNumber(id, ariaLabel, min, max, value) {
+    return el('input', { type: 'number', id: id, 'aria-label': ariaLabel, min: min, max: max, value: value });
+  }
+  function fieldButton(id, text, ariaLabel) {
+    return el('button', { id: id, type: 'button', 'aria-label': ariaLabel, text: text });
+  }
+  function fieldCheckboxRow(id, labelText) {
+    var cb = el('input', { type: 'checkbox', id: id, 'aria-label': labelText });
+    var row = el('div', { class: 'checkbox-row' }, [fieldLabel(id, labelText), cb]);
+    return { row: row, input: cb };
+  }
+
+  function appendLabeledTextarea(parent, idPrefix, labelText, readonly) {
+    var id = uid(idPrefix);
+    parent.appendChild(fieldLabel(id, labelText));
+    var ta = fieldTextarea(id, labelText, readonly);
+    parent.appendChild(ta);
+    return ta;
+  }
+  function appendLabeledSelect(parent, idPrefix, labelText, options, defaultValue) {
+    var id = uid(idPrefix);
+    parent.appendChild(fieldLabel(id, labelText));
+    var sel = fieldSelect(id, labelText, options, defaultValue);
+    parent.appendChild(sel);
+    return sel;
+  }
+  function appendLabeledPassword(parent, idPrefix, labelText) {
+    var id = uid(idPrefix);
+    parent.appendChild(fieldLabel(id, labelText));
+    var pw = fieldPassword(id, labelText);
+    parent.appendChild(pw);
+    return pw;
+  }
+  function appendLabeledNumber(parent, idPrefix, labelText, min, max, value) {
+    var id = uid(idPrefix);
+    parent.appendChild(fieldLabel(id, labelText));
+    var n = fieldNumber(id, labelText, min, max, value);
+    parent.appendChild(n);
+    return n;
+  }
+  function appendButton(parent, idPrefix, text) {
+    var id = uid(idPrefix);
+    var b = fieldButton(id, text, text);
+    parent.appendChild(b);
+    return b;
+  }
+
+  function copyValue(sourceTextarea, msgEl) {
+    var text = sourceTextarea.value;
+    function showFail() { msgEl.textContent = 'Copy failed: clipboard unavailable'; }
+    function tryExecCommandFallback() {
+      try {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        ta.setAttribute('aria-hidden', 'true');
+        ta.style.position = 'fixed';
+        ta.style.top = '-1000px';
+        ta.style.left = '-1000px';
+        document.body.appendChild(ta);
+        ta.select();
+        var ok = false;
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+        document.body.removeChild(ta);
+        if (ok) { msgEl.textContent = ''; } else { showFail(); }
+      } catch (e) {
+        showFail();
+      }
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { msgEl.textContent = ''; }).catch(tryExecCommandFallback);
+    } else {
+      tryExecCommandFallback();
+    }
+  }
+
+  function downloadValue(sourceTextarea, msgEl, categoryId, tabSlug) {
+    var text = sourceTextarea.value;
+    if (text === '') return;
+    var url;
+    try {
+      var blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      url = URL.createObjectURL(blob);
+      try {
+        var a = document.createElement('a');
+        var seconds = Math.floor(Date.now() / 1000);
+        a.href = url;
+        a.setAttribute('download', categoryId + '-' + tabSlug + '-' + seconds + '.txt');
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        msgEl.textContent = '';
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    } catch (e) {
+      msgEl.textContent = 'Download failed';
+    }
+  }
+
+  function appendIoButtons(parent, idPrefix, fieldLabelText, sourceTextarea, categoryId, tabSlug) {
+    var row = el('div', { class: 'io-buttons-row' });
+    var copyText = 'Copy ' + fieldLabelText;
+    var downloadText = 'Download ' + fieldLabelText;
+    var copyBtn = fieldButton(uid(idPrefix + '-copy'), copyText, copyText);
+    var downloadBtn = fieldButton(uid(idPrefix + '-dl'), downloadText, downloadText);
+    var msg = el('span', { class: 'transient-msg', 'aria-live': 'polite' });
+    row.appendChild(copyBtn);
+    row.appendChild(downloadBtn);
+    row.appendChild(msg);
+    parent.appendChild(row);
+    copyBtn.addEventListener('click', function () { copyValue(sourceTextarea, msg); });
+    downloadBtn.addEventListener('click', function () { downloadValue(sourceTextarea, msg, categoryId, tabSlug); });
+    return { copyBtn: copyBtn, downloadBtn: downloadBtn, msg: msg };
+  }
+
+  var ALL_BASE_OPTIONS = BASES.map(function (b) { return { value: String(b.n), text: 'Base ' + b.n + ' \u2014 ' + b.name }; });
+
+  // ==================================================================
+  // Generic two-level TabGroup
+  // ==================================================================
+
+  function reducedMotion() {
+    return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }
+  function transitionsEnabled() {
+    return settings.animation && !reducedMotion();
+  }
+
+  function createTabGroup(config) {
+    var tabs = config.tabs;
+    var tablistEl = config.tablistEl;
+    var indicator = el('div', { class: 'tab-indicator' });
+    tablistEl.appendChild(indicator);
+    tablistEl.setAttribute('role', 'tablist');
+
+    var tabEls = tabs.map(function (t, i) {
+      var panelId = t.panelId;
+      var btn = el('button', {
+        class: 'tab', type: 'button', role: 'tab',
+        id: t.tabId,
+        'aria-selected': i === 0 ? 'true' : 'false',
+        'aria-controls': panelId,
+        tabindex: i === 0 ? '0' : '-1'
+      }, [document.createTextNode(t.label)]);
+      tablistEl.insertBefore(btn, indicator);
+      return btn;
+    });
+
+    var activeIndex = 0;
+
+    function moveIndicator(index, animate) {
+      var tabEl = tabEls[index];
+      indicator.style.transitionDuration = animate ? '180ms' : '0ms';
+      indicator.style.transitionTimingFunction = 'cubic-bezier(0.4, 0, 0.2, 1)';
+      indicator.style.width = tabEl.offsetWidth + 'px';
+      indicator.style.transform = 'translateX(' + tabEl.offsetLeft + 'px)';
+    }
+
+    function activate(index, opts) {
+      opts = opts || {};
+      if (index === activeIndex && !opts.force) return;
+      var goingForward = index > activeIndex;
+      var animate = transitionsEnabled();
+
+      tabEls.forEach(function (t, i) {
+        t.setAttribute('aria-selected', i === index ? 'true' : 'false');
+        t.tabIndex = i === index ? 0 : -1;
+      });
+      moveIndicator(index, animate);
+
+      if (config.onActivate) config.onActivate(index, activeIndex, animate, goingForward);
+
+      if (settings.sfx && !opts.silent) playTone(config.sfxFreq);
+
+      activeIndex = index;
+    }
+
+    tabEls.forEach(function (btn, index) {
+      btn.addEventListener('click', function () { activate(index); });
+    });
+
+    tablistEl.addEventListener('keydown', function (e) {
+      var count = tabEls.length;
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        var next = (activeIndex + 1) % count;
+        activate(next); tabEls[next].focus();
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        var prev = (activeIndex - 1 + count) % count;
+        activate(prev); tabEls[prev].focus();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        activate(0); tabEls[0].focus();
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        activate(count - 1); tabEls[count - 1].focus();
+      }
+    });
+
+    window.addEventListener('resize', function () { moveIndicator(activeIndex, false); });
+
+    return {
+      activate: activate,
+      getActiveIndex: function () { return activeIndex; },
+      refreshIndicator: function () { moveIndicator(activeIndex, false); }
+    };
+  }
+
+  function animatePanelSwitch(outgoingEl, incomingEl, goingForward, animate) {
+    if (animate) {
+      var outDx = goingForward ? -12 : 12;
+      var inDx = goingForward ? 12 : -12;
+      outgoingEl.animate(
+        [{ opacity: 1, transform: 'translateX(0)' }, { opacity: 0, transform: 'translateX(' + outDx + 'px)' }],
+        { duration: 180, easing: 'ease-out', fill: 'forwards' }
+      );
+      incomingEl.animate(
+        [{ opacity: 0, transform: 'translateX(' + inDx + 'px)' }, { opacity: 1, transform: 'translateX(0)' }],
+        { duration: 180, easing: 'ease-out', fill: 'forwards' }
+      );
+    }
+    outgoingEl.setAttribute('data-active', 'false');
+    incomingEl.setAttribute('data-active', 'true');
+  }
+
+  // ==================================================================
+  // Category registry
+  // ==================================================================
+
+  var CATEGORY_DEFS = [];
+  function registerCategory(id, label, footerLines, buildFn) {
+    CATEGORY_DEFS.push({ id: id, label: label, footerLines: footerLines || [], build: buildFn });
+  }
+
+  function scaffoldCategory(catPanelEl, toolLabels) {
+    var wrap = el('div', { class: 'tabbar-wrap' });
+    var tablist = el('div', { class: 'tabbar level2' });
+    wrap.appendChild(tablist);
+    catPanelEl.appendChild(wrap);
+
+    var toolContainer = el('div', { class: 'tool-panel-container' });
+    catPanelEl.appendChild(toolContainer);
+
+    var toolPanels = toolLabels.map(function (label, i) {
+      var panelId = uid('toolpanel');
+      var p = el('section', {
+        class: 'tool-panel', role: 'tabpanel', id: panelId,
+        'data-active': i === 0 ? 'true' : 'false'
+      });
+      toolContainer.appendChild(p);
+      return { el: p, id: panelId, label: label };
+    });
+
+    var tabs = toolPanels.map(function (tp) {
+      return { label: tp.label, tabId: uid('tab'), panelId: tp.id };
+    });
+    tabs.forEach(function (t, i) { toolPanels[i].el.setAttribute('aria-labelledby', t.tabId); });
+
+    var tabGroup = createTabGroup({
+      tablistEl: tablist,
+      tabs: tabs,
+      sfxFreq: 660,
+      onActivate: function (index, prevIndex, animate, goingForward) {
+        animatePanelSwitch(toolPanels[prevIndex].el, toolPanels[index].el, goingForward, animate);
+      }
+    });
+
+    return { tabGroup: tabGroup, panels: toolPanels.map(function (tp) { return tp.el; }) };
+  }
+
+  // ---------------- BASE ----------------
+  registerCategory('base', 'BASE', [
+    'Leading zero bytes are not preserved by numeric base conversion.',
+    'Base 64 and Base 85 here are pure positional numeral systems using the standard Base64 / Ascii85 characters as digit sets \u2014 this is not RFC 4648 Base64 byte encoding or Adobe Ascii85 byte encoding.'
+  ], function (panelEl) {
+    var scaf = scaffoldCategory(panelEl, ['Encode', 'Decode']);
+    var encPanel = scaf.panels[0], decPanel = scaf.panels[1];
+
+    encPanel.appendChild(el('h2', { text: 'Encode' }));
+    var encIn = appendLabeledTextarea(encPanel, 'base-enc-in', 'Input text', false);
+    var encBase = appendLabeledSelect(encPanel, 'base-enc-base', 'Input base', ALL_BASE_OPTIONS, '10');
+    var encOut = appendLabeledTextarea(encPanel, 'base-enc-out', 'Encoded output', true);
+    appendIoButtons(encPanel, 'base-enc-copy', 'encoded output', encOut, 'base', 'encode');
+
+    decPanel.appendChild(el('h2', { text: 'Decode' }));
+    var decIn = appendLabeledTextarea(decPanel, 'base-dec-in', 'Input digits', false);
+    var decBase = appendLabeledSelect(decPanel, 'base-dec-base', 'Input base', ALL_BASE_OPTIONS, '10');
+    var decOut = appendLabeledTextarea(decPanel, 'base-dec-out', 'Decoded text', true);
+    appendIoButtons(decPanel, 'base-dec-copy', 'decoded text', decOut, 'base', 'decode');
+
+    function runEnc() { encOut.value = baseEncodeText(encIn.value, parseInt(encBase.value, 10)); }
+    function runDec() {
+      var r = baseDecodeDigits(decIn.value, parseInt(decBase.value, 10));
+      decOut.value = r.ok ? r.text : r.error;
+    }
+    encIn.addEventListener('input', runEnc);
+    encBase.addEventListener('change', runEnc);
+    decIn.addEventListener('input', runDec);
+    decBase.addEventListener('change', runDec);
+    runEnc(); runDec();
+  });
+
+  // ---------------- HASH ----------------
+  registerCategory('hash', 'HASH', [], function (panelEl) {
+    var scaf = scaffoldCategory(panelEl, ['Hash', 'Verify']);
+    var hashPanel = scaf.panels[0], verifyPanel = scaf.panels[1];
+    var BASE_ALG_OPTS = HASH_ALWAYS_ALGS.map(function (a) { return { value: a, text: hashDisplayLabel(a) }; });
+
+    hashPanel.appendChild(el('h2', { text: 'Hash' }));
+    var hIn = appendLabeledTextarea(hashPanel, 'hash-in', 'Input text', false);
+    var hAlg = appendLabeledSelect(hashPanel, 'hash-alg', 'Algorithm', BASE_ALG_OPTS, 'SHA-256');
+    var hOut = appendLabeledTextarea(hashPanel, 'hash-out', 'Hash (hex)', true);
+    appendIoButtons(hashPanel, 'hash-copy', 'hash', hOut, 'hash', 'hash');
+
+    function runHash() {
+      var text = hIn.value, alg = hAlg.value;
+      hashHex(text, alg).then(function (hex) {
+        if (hIn.value === text && hAlg.value === alg) hOut.value = hex;
+      });
+    }
+    hIn.addEventListener('input', runHash);
+    hAlg.addEventListener('change', runHash);
+    runHash();
+
+    verifyPanel.appendChild(el('h2', { text: 'Verify' }));
+    var vIn = appendLabeledTextarea(verifyPanel, 'hash-v-in', 'Input text', false);
+    var vExp = appendLabeledTextarea(verifyPanel, 'hash-v-exp', 'Expected hash (hex)', false);
+    var vAlg = appendLabeledSelect(verifyPanel, 'hash-v-alg', 'Algorithm', BASE_ALG_OPTS, 'SHA-256');
+    var vOut = appendLabeledTextarea(verifyPanel, 'hash-v-out', 'Result', true);
+    appendIoButtons(verifyPanel, 'hash-v-copy', 'result', vOut, 'hash', 'verify');
+
+    function runVerify() {
+      var text = vIn.value, exp = vExp.value, alg = vAlg.value;
+      hashVerify(text, exp, alg).then(function (result) {
+        if (vIn.value === text && vExp.value === exp && vAlg.value === alg) vOut.value = result;
+      });
+    }
+    vIn.addEventListener('input', runVerify);
+    vExp.addEventListener('input', runVerify);
+    vAlg.addEventListener('change', runVerify);
+    runVerify();
+
+    detectExtraHashSupport().then(function (supported) {
+      supported.forEach(function (alg) {
+        var label = hashDisplayLabel(alg);
+        var o1 = el('option', { value: alg, text: label });
+        hAlg.appendChild(o1);
+        var o2 = el('option', { value: alg, text: label });
+        vAlg.appendChild(o2);
+      });
+      [hAlg, vAlg].forEach(function (sel) {
+        var opts = Array.prototype.slice.call(sel.options);
+        var found = opts.some(function (o) { return o.getAttribute('value') === sel.value; });
+        if (!found) sel.value = 'SHA-256';
+      });
+    });
+  });
+
+  // ---------------- CRYPT ----------------
+  registerCategory('crypt', 'CRYPT', [], function (panelEl) {
+    var scaf = scaffoldCategory(panelEl, ['Encrypt', 'Decrypt']);
+    var encPanel = scaf.panels[0], decPanel = scaf.panels[1];
+    var ITER_OPTS = [{ value: '100000', text: '100000' }, { value: '600000', text: '600000' }, { value: '1000000', text: '1000000' }];
+
+    encPanel.appendChild(el('h2', { text: 'Encrypt' }));
+    var ePlain = appendLabeledTextarea(encPanel, 'crypt-e-plain', 'Plaintext', false);
+    var ePass = appendLabeledPassword(encPanel, 'crypt-e-pass', 'Password');
+    encPanel.appendChild(el('p', { class: 'warning-note', text: 'Password is not stored and cannot be recovered.' }));
+    var eIter = appendLabeledSelect(encPanel, 'crypt-e-iter', 'Iterations', ITER_OPTS, '600000');
+    var eOut = appendLabeledTextarea(encPanel, 'crypt-e-out', 'Ciphertext (base64)', true);
+    appendIoButtons(encPanel, 'crypt-e-copy', 'ciphertext', eOut, 'crypt', 'encrypt');
+
+    var eToken = 0;
+    function runEncrypt() {
+      var myToken = ++eToken;
+      var plaintext = ePlain.value, password = ePass.value, iterations = parseInt(eIter.value, 10);
+      if (plaintext === '') { eOut.value = ''; return; }
+      cryptEncrypt(plaintext, password, iterations).then(function (b64) {
+        if (myToken === eToken) eOut.value = b64;
+      });
+    }
+    ePlain.addEventListener('input', runEncrypt);
+    ePass.addEventListener('input', runEncrypt);
+    eIter.addEventListener('change', runEncrypt);
+
+    decPanel.appendChild(el('h2', { text: 'Decrypt' }));
+    var dCt = appendLabeledTextarea(decPanel, 'crypt-d-ct', 'Ciphertext (base64)', false);
+    var dPass = appendLabeledPassword(decPanel, 'crypt-d-pass', 'Password');
+    decPanel.appendChild(el('p', { class: 'warning-note', text: 'Password is not stored and cannot be recovered.' }));
+    var dIter = appendLabeledSelect(decPanel, 'crypt-d-iter', 'Iterations', ITER_OPTS, '600000');
+    var dOut = appendLabeledTextarea(decPanel, 'crypt-d-out', 'Plaintext', true);
+    appendIoButtons(decPanel, 'crypt-d-copy', 'plaintext', dOut, 'crypt', 'decrypt');
+
+    var dToken = 0;
+    function runDecrypt() {
+      var myToken = ++dToken;
+      var ct = dCt.value, password = dPass.value, iterations = parseInt(dIter.value, 10);
+      if (ct === '') { dOut.value = ''; return; }
+      cryptDecrypt(ct, password, iterations).then(function (r) {
+        if (myToken === dToken) dOut.value = r.ok ? r.text : r.error;
+      });
+    }
+    dCt.addEventListener('input', runDecrypt);
+    dPass.addEventListener('input', runDecrypt);
+    dIter.addEventListener('change', runDecrypt);
+  });
+
+  // ---------------- COMPRESS ----------------
+  registerCategory('compress', 'COMPRESS', [], function (panelEl) {
+    if (!compressionSupported()) {
+      panelEl.appendChild(el('div', { class: 'fallback-notice', text: 'ERROR: Compression Streams API is not supported by this browser' }));
+      return;
+    }
+    var scaf = scaffoldCategory(panelEl, ['Compress', 'Decompress']);
+    var cPanel = scaf.panels[0], dPanel = scaf.panels[1];
+    var FMT_OPTS = [{ value: 'gzip', text: 'gzip' }, { value: 'deflate', text: 'deflate' }, { value: 'deflate-raw', text: 'deflate-raw' }];
+
+    cPanel.appendChild(el('h2', { text: 'Compress' }));
+    var cIn = appendLabeledTextarea(cPanel, 'comp-c-in', 'Input text', false);
+    var cFmt = appendLabeledSelect(cPanel, 'comp-c-fmt', 'Format', FMT_OPTS, 'gzip');
+    var cOut = appendLabeledTextarea(cPanel, 'comp-c-out', 'Compressed (base64)', true);
+    appendIoButtons(cPanel, 'comp-c-copy', 'compressed', cOut, 'compress', 'compress');
+
+    var cToken = 0;
+    function runCompress() {
+      var myToken = ++cToken;
+      var text = cIn.value, format = cFmt.value;
+      if (text === '') { cOut.value = ''; return; }
+      compressText(text, format).then(function (b64) {
+        if (myToken === cToken) cOut.value = b64;
+      });
+    }
+    cIn.addEventListener('input', runCompress);
+    cFmt.addEventListener('change', runCompress);
+
+    dPanel.appendChild(el('h2', { text: 'Decompress' }));
+    var dIn = appendLabeledTextarea(dPanel, 'comp-d-in', 'Compressed (base64)', false);
+    var dFmt = appendLabeledSelect(dPanel, 'comp-d-fmt', 'Format', FMT_OPTS, 'gzip');
+    var dOut = appendLabeledTextarea(dPanel, 'comp-d-out', 'Decompressed text', true);
+    appendIoButtons(dPanel, 'comp-d-copy', 'decompressed', dOut, 'compress', 'decompress');
+
+    var dToken = 0;
+    function runDecompress() {
+      var myToken = ++dToken;
+      var b64 = dIn.value, format = dFmt.value;
+      if (b64 === '') { dOut.value = ''; return; }
+      decompressText(b64, format).then(function (r) {
+        if (myToken === dToken) dOut.value = r.ok ? r.text : r.error;
+      });
+    }
+    dIn.addEventListener('input', runDecompress);
+    dFmt.addEventListener('change', runDecompress);
+  });
+
+  // ---------------- UUID ----------------
+  registerCategory('uuid', 'UUID', [], function (panelEl) {
+    var scaf = scaffoldCategory(panelEl, ['Generate', 'Parse']);
+    var genPanel = scaf.panels[0], parsePanel = scaf.panels[1];
+
+    genPanel.appendChild(el('h2', { text: 'Generate' }));
+    var gVer = appendLabeledSelect(genPanel, 'uuid-g-ver', 'Version', [{ value: 'v4', text: 'v4 (random)' }, { value: 'v7', text: 'v7 (time-ordered)' }], 'v4');
+    var gCount = appendLabeledNumber(genPanel, 'uuid-g-count', 'Count', '1', '1000', '1');
+    var gOut = appendLabeledTextarea(genPanel, 'uuid-g-out', 'UUIDs (one per line)', true);
+    appendIoButtons(genPanel, 'uuid-g-copy', 'UUIDs', gOut, 'uuid', 'generate');
+
+    function runGenerate() {
+      var count = Math.min(1000, Math.max(1, parseInt(gCount.value, 10) || 1));
+      gOut.value = generateUuids(gVer.value, count);
+    }
+    gVer.addEventListener('change', runGenerate);
+    gCount.addEventListener('input', runGenerate);
+    runGenerate();
+
+    parsePanel.appendChild(el('h2', { text: 'Parse' }));
+    var pIn = appendLabeledTextarea(parsePanel, 'uuid-p-in', 'UUID', false);
+    var pOut = appendLabeledTextarea(parsePanel, 'uuid-p-out', 'Parsed', true);
+    appendIoButtons(parsePanel, 'uuid-p-copy', 'parsed', pOut, 'uuid', 'parse');
+
+    function runParse() {
+      if (pIn.value === '') { pOut.value = ''; return; }
+      var r = parseUuid(pIn.value);
+      if (!r.ok) { pOut.value = r.error; return; }
+      pOut.value = 'version: ' + r.version + '\nvariant: ' + r.variant + '\nbytes: ' + r.bytesHex + '\ntimestamp: ' + r.timestamp;
+    }
+    pIn.addEventListener('input', runParse);
+  });
+
+  // ---------------- JWT ----------------
+  registerCategory('jwt', 'JWT', [], function (panelEl) {
+    var scaf = scaffoldCategory(panelEl, ['Encode', 'Decode']);
+    var encPanel = scaf.panels[0], decPanel = scaf.panels[1];
+
+    encPanel.appendChild(el('h2', { text: 'Encode' }));
+    var jHeader = appendLabeledTextarea(encPanel, 'jwt-e-header', 'Header (JSON)', false);
+    jHeader.value = '{"alg":"HS256","typ":"JWT"}';
+    var jPayload = appendLabeledTextarea(encPanel, 'jwt-e-payload', 'Payload (JSON)', false);
+    jPayload.value = '{}';
+    var jSecret = appendLabeledPassword(encPanel, 'jwt-e-secret', 'Secret');
+    var jOut = appendLabeledTextarea(encPanel, 'jwt-e-out', 'JWT', true);
+    appendIoButtons(encPanel, 'jwt-e-copy', 'JWT', jOut, 'jwt', 'encode');
+
+    var eToken = 0;
+    function runEncode() {
+      var myToken = ++eToken;
+      var h = jHeader.value, p = jPayload.value, s = jSecret.value;
+      if (s === '') { jOut.value = ''; return; }
+      jwtEncode(h, p, s).then(function (r) {
+        if (myToken !== eToken) return;
+        jOut.value = r.ok ? r.token : r.error;
+      });
+    }
+    jHeader.addEventListener('input', runEncode);
+    jPayload.addEventListener('input', runEncode);
+    jSecret.addEventListener('input', runEncode);
+    runEncode();
+
+    decPanel.appendChild(el('h2', { text: 'Decode' }));
+    var dJwt = appendLabeledTextarea(decPanel, 'jwt-d-jwt', 'JWT', false);
+    var dSecret = appendLabeledPassword(decPanel, 'jwt-d-secret', 'Secret');
+    var dOut = appendLabeledTextarea(decPanel, 'jwt-d-out', 'Decoded', true);
+    appendIoButtons(decPanel, 'jwt-d-copy', 'decoded', dOut, 'jwt', 'decode');
+
+    var dToken = 0;
+    function runDecode() {
+      var myToken = ++dToken;
+      var token = dJwt.value, secret = dSecret.value;
+      if (token === '') { dOut.value = ''; return; }
+      jwtDecode(token, secret).then(function (r) {
+        if (myToken !== dToken) return;
+        if (!r.ok) { dOut.value = r.error; return; }
+        dOut.value = 'header: ' + r.header + '\npayload: ' + r.payload + '\nsignature: ' + r.signature;
+      });
+    }
+    dJwt.addEventListener('input', runDecode);
+    dSecret.addEventListener('input', runDecode);
+  });
+
+  // ---------------- TEXT ----------------
+  registerCategory('text', 'TEXT', [], function (panelEl) {
+    var scaf = scaffoldCategory(panelEl, ['Encode', 'Decode']);
+    var encPanel = scaf.panels[0], decPanel = scaf.panels[1];
+    var METHODS = [{ value: 'url', text: 'URL percent-encode' }, { value: 'html', text: 'HTML entity' }];
+
+    encPanel.appendChild(el('h2', { text: 'Encode' }));
+    var eIn = appendLabeledTextarea(encPanel, 'text-e-in', 'Input text', false);
+    var eMethod = appendLabeledSelect(encPanel, 'text-e-method', 'Method', METHODS, 'url');
+    var eOut = appendLabeledTextarea(encPanel, 'text-e-out', 'Encoded', true);
+    appendIoButtons(encPanel, 'text-e-copy', 'encoded', eOut, 'text', 'encode');
+
+    function runEnc() {
+      eOut.value = eMethod.value === 'url' ? textUrlEncode(eIn.value) : textHtmlEncode(eIn.value);
+    }
+    eIn.addEventListener('input', runEnc);
+    eMethod.addEventListener('change', runEnc);
+    runEnc();
+
+    decPanel.appendChild(el('h2', { text: 'Decode' }));
+    var dIn = appendLabeledTextarea(decPanel, 'text-d-in', 'Encoded', false);
+    var dMethod = appendLabeledSelect(decPanel, 'text-d-method', 'Method', METHODS, 'url');
+    var dOut = appendLabeledTextarea(decPanel, 'text-d-out', 'Decoded', true);
+    appendIoButtons(decPanel, 'text-d-copy', 'decoded', dOut, 'text', 'decode');
+
+    function runDec() {
+      var r = dMethod.value === 'url' ? textUrlDecode(dIn.value) : textHtmlDecode(dIn.value);
+      dOut.value = r.ok ? r.text : r.error;
+    }
+    dIn.addEventListener('input', runDec);
+    dMethod.addEventListener('change', runDec);
+    runDec();
+  });
+
+  // ---------------- TIME ----------------
+  registerCategory('time', 'TIME', [], function (panelEl) {
+    var scaf = scaffoldCategory(panelEl, ['From Epoch', 'From ISO']);
+    var epPanel = scaf.panels[0], isoPanel = scaf.panels[1];
+    var UNITS = [{ value: 'seconds', text: 'seconds' }, { value: 'milliseconds', text: 'milliseconds' }];
+
+    epPanel.appendChild(el('h2', { text: 'From Epoch' }));
+    var eIn = appendLabeledTextarea(epPanel, 'time-e-in', 'Epoch', false);
+    var eUnit = appendLabeledSelect(epPanel, 'time-e-unit', 'Unit', UNITS, 'seconds');
+    var eOut = appendLabeledTextarea(epPanel, 'time-e-out', 'ISO 8601 (UTC)', true);
+    appendIoButtons(epPanel, 'time-e-copy', 'ISO 8601', eOut, 'time', 'from-epoch');
+
+    function runFromEpoch() {
+      if (eIn.value.trim() === '') { eOut.value = ''; return; }
+      var r = timeFromEpoch(eIn.value, eUnit.value);
+      eOut.value = r.ok ? r.text : r.error;
+    }
+    eIn.addEventListener('input', runFromEpoch);
+    eUnit.addEventListener('change', runFromEpoch);
+
+    isoPanel.appendChild(el('h2', { text: 'From ISO' }));
+    var iIn = appendLabeledTextarea(isoPanel, 'time-i-in', 'ISO 8601', false);
+    var iUnit = appendLabeledSelect(isoPanel, 'time-i-unit', 'Unit', UNITS, 'seconds');
+    var iOut = appendLabeledTextarea(isoPanel, 'time-i-out', 'Epoch', true);
+    appendIoButtons(isoPanel, 'time-i-copy', 'epoch', iOut, 'time', 'from-iso');
+
+    function runFromIso() {
+      if (iIn.value.trim() === '') { iOut.value = ''; return; }
+      var r = timeFromIso(iIn.value, iUnit.value);
+      iOut.value = r.ok ? r.text : r.error;
+    }
+    iIn.addEventListener('input', runFromIso);
+    iUnit.addEventListener('change', runFromIso);
+  });
+
+  // ---------------- JSON ----------------
+  registerCategory('json', 'JSON', [], function (panelEl) {
+    var sharedId = uid('json-shared-in');
+    var sharedLabel = fieldLabel(sharedId, 'Input JSON');
+    var sharedIn = fieldTextarea(sharedId, 'Input JSON', false);
+    panelEl.appendChild(sharedLabel);
+    panelEl.appendChild(sharedIn);
+
+    var scaf = scaffoldCategory(panelEl, ['Pretty', 'Minify', 'Validate']);
+    var prettyPanel = scaf.panels[0], minifyPanel = scaf.panels[1], validatePanel = scaf.panels[2];
+
+    prettyPanel.appendChild(el('h2', { text: 'Pretty' }));
+    var prettyOut = appendLabeledTextarea(prettyPanel, 'json-pretty-out', 'Result', true);
+    appendIoButtons(prettyPanel, 'json-pretty-copy', 'result', prettyOut, 'json', 'pretty');
+
+    minifyPanel.appendChild(el('h2', { text: 'Minify' }));
+    var minifyOut = appendLabeledTextarea(minifyPanel, 'json-minify-out', 'Result', true);
+    appendIoButtons(minifyPanel, 'json-minify-copy', 'result', minifyOut, 'json', 'minify');
+
+    validatePanel.appendChild(el('h2', { text: 'Validate' }));
+    var validateOut = appendLabeledTextarea(validatePanel, 'json-validate-out', 'Result', true);
+    appendIoButtons(validatePanel, 'json-validate-copy', 'result', validateOut, 'json', 'validate');
+
+    function runAll() {
+      var str = sharedIn.value;
+      if (str.trim() === '') { prettyOut.value = ''; minifyOut.value = ''; validateOut.value = ''; return; }
+      var p = jsonPretty(str);
+      prettyOut.value = p.ok ? p.text : p.error;
+      var m = jsonMinify(str);
+      minifyOut.value = m.ok ? m.text : m.error;
+      validateOut.value = jsonValidate(str);
+    }
+    sharedIn.addEventListener('input', runAll);
+  });
+
+  // ==================================================================
+  // App shell
+  // ==================================================================
+
+  try {
+
+  var catTablist = document.getElementById('cat-tabbar');
+  var catPanelContainer = document.getElementById('cat-panel-container');
+  var footerEl = document.getElementById('footer');
+
+  var categoryPanelEls = CATEGORY_DEFS.map(function () {
+    var p = el('div', { class: 'cat-panel', 'data-active': 'false', id: uid('catpanel') });
+    catPanelContainer.appendChild(p);
+    return p;
+  });
+
+  CATEGORY_DEFS.forEach(function (def, i) {
+    def.build(categoryPanelEls[i]);
+    function clearMessages() {
+      var msgs = [];
+      (function walk(el) {
+        if (el.getAttribute && el.getAttribute('class') === 'transient-msg') msgs.push(el);
+        Array.from(el.children || []).forEach(walk);
+      })(categoryPanelEls[i]);
+      msgs.forEach(function (m) { m.textContent = ''; });
+    }
+    categoryPanelEls[i].addEventListener('input', clearMessages);
+    categoryPanelEls[i].addEventListener('change', clearMessages);
+  });
+  categoryPanelEls[0].setAttribute('data-active', 'true');
+
+  var visitedCategory = {};
+  visitedCategory[0] = true;
+
+  var catTabs = CATEGORY_DEFS.map(function (def, i) {
+    return { label: def.label, tabId: uid('cattab'), panelId: categoryPanelEls[i].id };
+  });
+  catTabs.forEach(function (t, i) { categoryPanelEls[i].setAttribute('aria-labelledby', t.tabId); });
+
+  function updateFooter(index) {
+    var lines = CATEGORY_DEFS[index].footerLines;
+    while (footerEl.firstChild) footerEl.removeChild(footerEl.firstChild);
+    lines.forEach(function (line) { footerEl.appendChild(el('p', { text: line })); });
+  }
+  updateFooter(0);
+
+  var catTabGroup = createTabGroup({
+    tablistEl: catTablist,
+    tabs: catTabs,
+    sfxFreq: 880,
+    onActivate: function (index, prevIndex, animate, goingForward) {
+      animatePanelSwitch(categoryPanelEls[prevIndex], categoryPanelEls[index], goingForward, animate);
+      updateFooter(index);
+      visitedCategory[index] = true;
+    }
+  });
+
+  // ---------------- Settings panel wiring ----------------
+
+  var gearBtn = document.getElementById('gear-btn');
+  var settingsPanel = document.getElementById('settings');
+  var optAnimation = document.getElementById('opt-animation');
+  var optSfx = document.getElementById('opt-sfx');
+  var optPalette = document.getElementById('opt-palette');
+  var optCredits = document.getElementById('opt-credits');
+
+  var creditsScreen = document.getElementById('credits-screen');
+  var creditsClose = document.getElementById('credits-close');
+
+  PALETTES.forEach(function (p) {
+    var opt = el('option', { value: p.id, text: p.name });
+    optPalette.appendChild(opt);
+  });
+
+  function syncSettingsToControls() {
+    optAnimation.checked = settings.animation;
+    optSfx.checked = settings.sfx;
+    optPalette.value = settings.palette;
+  }
+  function openSettings() { settingsPanel.setAttribute('data-open', 'true'); gearBtn.setAttribute('aria-expanded', 'true'); }
+  function closeSettings() { settingsPanel.setAttribute('data-open', 'false'); gearBtn.setAttribute('aria-expanded', 'false'); }
+  function isSettingsOpen() { return settingsPanel.getAttribute('data-open') === 'true'; }
+
+  function openCredits() {
+    closeSettings();
+    creditsScreen.setAttribute('data-open', 'true');
+  }
+  function closeCredits() { creditsScreen.setAttribute('data-open', 'false'); }
+  function isCreditsOpen() { return creditsScreen.getAttribute('data-open') === 'true'; }
+
+  gearBtn.addEventListener('click', function () {
+    if (isCreditsOpen()) closeCredits();
+    isSettingsOpen() ? closeSettings() : openSettings();
+  });
+
+  // Auto-close settings when clicking/touching outside the panel or the gear button.
+  document.addEventListener('click', function (e) {
+    if (!isSettingsOpen()) return;
+    if (settingsPanel.contains(e.target)) return;
+    if (gearBtn.contains(e.target)) return;
+    closeSettings();
+  });
+  document.addEventListener('touchstart', function (e) {
+    if (!isSettingsOpen()) return;
+    var t = e.target;
+    if (settingsPanel.contains(t)) return;
+    if (gearBtn.contains(t)) return;
+    closeSettings();
+  }, { passive: true });
+
+  // Escape key: close credits first, then settings.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    if (isCreditsOpen()) { closeCredits(); return; }
+    if (isSettingsOpen()) closeSettings();
+  });
+
+  optCredits.addEventListener('click', function () { openCredits(); });
+  creditsClose.addEventListener('click', function () { closeCredits(); });
+  creditsScreen.addEventListener('click', function (e) {
+    if (e.target === creditsScreen) closeCredits();
+  });
+
+  optAnimation.addEventListener('change', function () { settings.animation = optAnimation.checked; saveSettings(settings); });
+  optSfx.addEventListener('change', function () { settings.sfx = optSfx.checked; saveSettings(settings); });
+  optPalette.addEventListener('change', function () {
+    settings.palette = optPalette.value;
+    applyPalette(settings.palette);
+    saveSettings(settings);
+  });
+
+  // ---------------- Init ----------------
+
+  applyPalette(settings.palette);
+  syncSettingsToControls();
+  catTabGroup.refreshIndicator();
+
+  } catch (initErr) {
+    console.error('Initialization failed:', initErr);
+    var banner = document.createElement('div');
+    banner.setAttribute('role', 'alert');
+    banner.style.background = 'var(--bg)';
+    banner.style.color = 'var(--fg)';
+    banner.style.border = '2px solid var(--fg)';
+    banner.style.padding = '12px';
+    banner.style.fontFamily = 'ui-monospace, "SFMono-Regular", "Menlo", "Consolas", monospace';
+    banner.textContent = 'Initialization failed \u2014 see console for details';
+    document.body.insertBefore(banner, document.body.firstChild);
+  }
+})();
+
+</script>
+</body>
+</html>
